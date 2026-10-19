@@ -1,351 +1,448 @@
-import html
-import json
+# main.py
+# 동네별 인구 피라미드
+# Streamlit Cloud 배포용 앱
 
+import re
+import io
+
+import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
+import plotly.graph_objects as go
 
 
+# --------------------------------------------------
+# 1. 앱 기본 설정
+# --------------------------------------------------
 st.set_page_config(
-    page_title="MBTI 단짝 포켓몬 찾기",
-    page_icon="⚡",
+    page_title="동네별 인구 피라미드",
+    page_icon="🏘️",
     layout="wide",
-    initial_sidebar_state="collapsed",
 )
 
-# MBTI별 포켓몬 정보와 결과에 사용할 강조색
-POKEMON = {
-    "INTJ": {
-        "ko": "뮤츠", "en": "Mewtwo", "id": 150,
-        "type": "에스퍼", "feature": "날카로운 지능과 강한 집중력",
-        "reason": "큰 그림을 읽고 차근차근 전략을 세우는 모습이 잘 어울려요.\n조용히 깊이 생각하는 당신 곁에서 뮤츠는 든든한 두뇌 파트너가 되어 줄 거예요.",
-        "accent": "#A78BDE", "ink": "#6843A5", "emoji": "🔮",
-    },
-    "INTP": {
-        "ko": "메타몽", "en": "Ditto", "id": 132,
-        "type": "노말", "feature": "상황에 따라 자유롭게 변신하는 호기심쟁이",
-        "reason": "메타몽처럼 새로운 가능성을 관찰하고 실험하는 걸 좋아하죠.\n정해진 틀에 얽매이지 않는 둘은 엉뚱하고 멋진 아이디어를 함께 만들 수 있어요.",
-        "accent": "#B7A0E6", "ink": "#6A4F9E", "emoji": "🧩",
-    },
-    "ENTJ": {
-        "ko": "리자몽", "en": "Charizard", "id": 6,
-        "type": "불꽃 / 비행", "feature": "자신감 넘치는 리더 기질과 강력한 추진력",
-        "reason": "목표를 정하면 거침없이 나아가는 에너지가 닮았어요.\n리자몽과 함께라면 큰 도전도 멋지게 이끌어 갈 수 있을 거예요.",
-        "accent": "#F28C45", "ink": "#B94D1D", "emoji": "🔥",
-    },
-    "ENTP": {
-        "ko": "팬텀", "en": "Gengar", "id": 94,
-        "type": "고스트 / 독", "feature": "장난기 가득하고 예측할 수 없는 매력",
-        "reason": "새로운 아이디어와 재치 있는 장난을 즐기는 점이 닮았어요.\n팬텀과 함께라면 지루할 틈 없이 기발한 모험이 계속될 거예요.",
-        "accent": "#9C83D6", "ink": "#59409A", "emoji": "👻",
-    },
-    "INFJ": {
-        "ko": "라프라스", "en": "Lapras", "id": 131,
-        "type": "물 / 얼음", "feature": "차분하고 다정한 마음, 편안한 동행",
-        "reason": "다른 사람의 마음을 세심하게 살피는 당신과 라프라스는 잘 맞아요.\n서두르지 않고 깊은 이야기를 나누며 잔잔한 위로를 주고받을 수 있답니다.",
-        "accent": "#73BFD0", "ink": "#247A91", "emoji": "🌊",
-    },
-    "INFP": {
-        "ko": "이브이", "en": "Eevee", "id": 133,
-        "type": "노말", "feature": "풍부한 가능성과 포근한 매력",
-        "reason": "자기만의 세계와 다양한 가능성을 소중히 여기는 점이 닮았어요.\n이브이는 당신의 다정한 마음과 개성 있는 꿈을 편안하게 응원해 줄 거예요.",
-        "accent": "#D7A66B", "ink": "#925B25", "emoji": "🍯",
-    },
-    "ENFJ": {
-        "ko": "피카츄", "en": "Pikachu", "id": 25,
-        "type": "전기", "feature": "밝고 씩씩하며 친구를 응원하는 에너지",
-        "reason": "주변 사람들에게 힘을 주고 함께 기뻐하는 모습이 닮았어요.\n피카츄의 반짝이는 에너지가 당신의 따뜻한 리더십을 더욱 빛내 줄 거예요.",
-        "accent": "#F2C94C", "ink": "#9A6A00", "emoji": "⚡",
-    },
-    "ENFP": {
-        "ko": "토게피", "en": "Togepi", "id": 175,
-        "type": "페어리", "feature": "희망과 행운을 전하는 사랑스러운 분위기",
-        "reason": "새로운 만남과 즐거운 가능성을 반기는 점이 꼭 닮았어요.\n호기심 많은 당신과 토게피가 함께하면 작은 하루도 특별한 모험이 될 거예요.",
-        "accent": "#E9A9C6", "ink": "#A04478", "emoji": "🌈",
-    },
-    "ISTJ": {
-        "ko": "거북왕", "en": "Blastoise", "id": 9,
-        "type": "물", "feature": "든든한 방어력과 책임감 있는 태도",
-        "reason": "맡은 일을 꾸준히 해내고 약속을 중요하게 생각하는 점이 잘 맞아요.\n거북왕은 어떤 상황에서도 믿고 등을 맡길 수 있는 든든한 단짝이에요.",
-        "accent": "#78A9E8", "ink": "#285E9E", "emoji": "💧",
-    },
-    "ISFJ": {
-        "ko": "이상해씨", "en": "Bulbasaur", "id": 1,
-        "type": "풀 / 독", "feature": "온화하고 친절하며 동료를 잘 돌봄",
-        "reason": "주변을 세심하게 챙기고 작은 도움도 아끼지 않는 모습이 닮았어요.\n이상해씨와 함께라면 서로의 속도를 존중하며 천천히 성장할 수 있어요.",
-        "accent": "#83C987", "ink": "#27713B", "emoji": "🌱",
-    },
-    "ESTJ": {
-        "ko": "괴력몬", "en": "Machamp", "id": 68,
-        "type": "격투", "feature": "힘과 끈기, 바로 행동으로 옮기는 실행력",
-        "reason": "계획을 세우고 팀이 목표를 이루도록 이끄는 면이 잘 어울려요.\n괴력몬은 당신의 성실한 노력에 힘을 보태는 믿음직한 파트너가 될 거예요.",
-        "accent": "#E58D91", "ink": "#9B3C46", "emoji": "💪",
-    },
-    "ESFJ": {
-        "ko": "푸린", "en": "Jigglypuff", "id": 39,
-        "type": "노말 / 페어리", "feature": "노래와 놀이로 분위기를 부드럽게 만드는 친구",
-        "reason": "사람들과 어울리고 모두가 편안한 분위기를 만드는 점이 닮았어요.\n푸린의 노래와 당신의 다정함이 모이면 모임마다 웃음이 가득할 거예요.",
-        "accent": "#F2A8C9", "ink": "#A83F79", "emoji": "🎤",
-    },
-    "ISTP": {
-        "ko": "루카리오", "en": "Lucario", "id": 448,
-        "type": "격투 / 강철", "feature": "민첩하고 침착하며 기운을 읽는 감각",
-        "reason": "필요한 순간 빠르게 상황을 파악하고 직접 해결하는 점이 닮았어요.\n루카리오와 함께라면 말이 많지 않아도 서로를 믿는 멋진 팀이 될 수 있어요.",
-        "accent": "#6EA9D9", "ink": "#245987", "emoji": "🥋",
-    },
-    "ISFP": {
-        "ko": "리피아", "en": "Leafeon", "id": 470,
-        "type": "풀", "feature": "자연을 닮은 차분함과 섬세한 감각",
-        "reason": "아름다운 것과 편안한 순간을 소중히 여기는 점이 닮았어요.\n리피아와 숲길을 걸으며 나만의 감성과 평화로운 시간을 나눠 보세요.",
-        "accent": "#9BCB79", "ink": "#4A7628", "emoji": "🍃",
-    },
-    "ESTP": {
-        "ko": "갸라도스", "en": "Gyarados", "id": 130,
-        "type": "물 / 비행", "feature": "강렬한 힘과 과감한 돌파력",
-        "reason": "생각만 하기보다 직접 부딪치며 경험하는 에너지가 닮았어요.\n갸라도스와 함께라면 예상 밖의 상황도 자신 있게 돌파하는 짜릿한 팀이 되겠어요.",
-        "accent": "#5CA9DA", "ink": "#155E90", "emoji": "🌪️",
-    },
-    "ESFP": {
-        "ko": "잠만보", "en": "Snorlax", "id": 143,
-        "type": "노말", "feature": "느긋하고 편안한 분위기와 큰 포용력",
-        "reason": "사람들과 즐거운 시간을 보내고 순간의 행복을 누리는 점이 잘 맞아요.\n잠만보와 맛있는 간식을 나누며 웃고 쉬는 것만으로도 최고의 하루가 될 거예요.",
-        "accent": "#7FB7A5", "ink": "#286B59", "emoji": "🍙",
-    },
-}
+# 원본 CSV 압축 파일 주소
+DATA_URL = (
+    "https://raw.githubusercontent.com/first2022-cyber/"
+    "contents/main/population_ts_yearly_gender.zip"
+)
 
-# 전체 화면 톤과 버튼 디자인
+# 나이 라벨을 0세부터 100세 이상까지 순서대로 생성
+AGE_LABELS = [f"{age}세" for age in range(101)]
+AGE_LABELS[-1] = "100세 이상"
+
+
+# --------------------------------------------------
+# 2. 데이터 불러오기
+# --------------------------------------------------
+@st.cache_data(show_spinner="전국 인구 데이터를 불러오는 중입니다...")
+def load_data():
+    """압축된 CSV를 읽고 최신 연도 데이터만 반환합니다."""
+
+    # URL에서 ZIP 파일을 읽습니다.
+    # pandas는 ZIP 압축된 CSV도 바로 읽을 수 있습니다.
+    df = pd.read_csv(DATA_URL, compression="zip")
+
+    # 열 이름에 숨어 있을 수 있는 앞뒤 공백 제거
+    df.columns = df.columns.astype(str).str.strip()
+
+    # 지역 및 연도 열 확인
+    required_columns = ["연도", "시도", "시군구", "동"]
+    missing_columns = [
+        col for col in required_columns if col not in df.columns
+    ]
+
+    if missing_columns:
+        raise ValueError(
+            f"필수 열을 찾을 수 없습니다: {missing_columns}"
+        )
+
+    # 연도 열을 숫자로 변환합니다.
+    # 변환할 수 없는 값은 결측치로 처리합니다.
+    df["연도"] = pd.to_numeric(df["연도"], errors="coerce")
+    df = df.dropna(subset=["연도"]).copy()
+    df["연도"] = df["연도"].astype(int)
+
+    if df.empty:
+        raise ValueError("사용할 수 있는 연도 데이터가 없습니다.")
+
+    # 데이터에 실제로 존재하는 가장 최신 연도를 선택합니다.
+    latest_year = int(df["연도"].max())
+    df = df.loc[df["연도"] == latest_year].copy()
+
+    # 지역 이름의 결측치와 공백을 정리합니다.
+    for col in ["시도", "시군구", "동"]:
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
+    # 남_0세, 여_0세, ..., 남_100세 이상, 여_100세 이상 열 확인
+    age_columns = []
+    for age in AGE_LABELS:
+        age_columns.extend([f"남_{age}", f"여_{age}"])
+
+    missing_age_columns = [
+        col for col in age_columns if col not in df.columns
+    ]
+
+    if missing_age_columns:
+        raise ValueError(
+            "일부 나이별 인구 열을 찾을 수 없습니다: "
+            + ", ".join(missing_age_columns[:10])
+        )
+
+    # 인구 열을 숫자로 변환합니다.
+    # 쉼표가 포함된 숫자 문자열도 처리합니다.
+    for col in age_columns:
+        df[col] = pd.to_numeric(
+            df[col].astype(str).str.replace(",", "", regex=False),
+            errors="coerce",
+        ).fillna(0)
+
+    return df, latest_year
+
+
+# --------------------------------------------------
+# 3. 따뜻한 색상의 화면 디자인
+# --------------------------------------------------
 st.markdown(
     """
     <style>
-      :root { --cream: #fff9e9; --butter: #ffe9a8; --honey: #f4c85d; --brown: #604b2b; }
-      .stApp { background: linear-gradient(180deg, #fff9e9 0%, #fff4d2 55%, #fffaf0 100%); color: #604b2b; }
-      [data-testid="stHeader"] { background: rgba(255,249,233,0.8); }
-      [data-testid="stAppViewContainer"] .main .block-container { max-width: 1100px; padding-top: 1.6rem; padding-bottom: 3rem; }
-      html, body, [class*="css"] { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; }
-      h1, h2, h3 { font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif !important; font-weight: 800; color: #604b2b; }
-      .hero { text-align:center; padding: 1.35rem 1.2rem 1.2rem; border: 2px solid #f6df9c; background: rgba(255,255,255,.72); border-radius: 28px; box-shadow: 0 8px 24px rgba(130,95,25,.08); }
-      .hero-kicker { display:inline-block; background:#fff0bd; color:#8a641d; border-radius:999px; padding:7px 15px; font-size:17px; font-weight:700; margin-bottom:12px; }
-      .hero h1 { font-size: clamp(2.3rem, 5vw, 3.6rem); margin: 0 0 .4rem; line-height:1.15; font-weight:900; }
-      .hero p { font-size:19px; margin: 0.3rem 0; color:#80673d; }
-      .section-label { font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-weight:800; font-size:1.55rem; margin:1.55rem 0 .5rem; color:#684e22; }
-      .section-help { font-size:1.05rem; color:#8a744f; margin-bottom:.7rem; }
-      .stButton > button { min-height: 3.4rem; border-radius: 16px; border: 2px solid #f2d887; background: #fffdf5; color: #725522; font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif; font-weight:800; font-size:1.16rem; box-shadow:0 3px 0 #f1dea7; transition: transform .15s ease, box-shadow .15s ease, background .15s ease; }
-      .stButton > button:hover { border-color:#e5b83e; background:#fff0bd; color:#684613; transform:translateY(-2px); box-shadow:0 5px 0 #ebcd78; }
-      .stButton > button:focus { border-color:#cfa02a; color:#684613; }
-      .tip { text-align:center; color:#9a835b; font-size:15px; padding:12px 0 0; }
-      .footer-note { color:#9a835b; font-size:13px; text-align:center; padding:20px 5px 0; }
-      div[data-testid="stAlert"] { border-radius: 16px; }
+    .stApp {
+        background-color: #FFF9F3;
+    }
+
+    h1, h2, h3 {
+        color: #704735;
+    }
+
+    div[data-testid="stMetric"] {
+        background-color: #FFFFFF;
+        border: 1px solid #F0DDCE;
+        padding: 16px;
+        border-radius: 12px;
+    }
+
+    div[data-testid="stSelectbox"] label {
+        color: #704735;
+        font-weight: 600;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
+
+# --------------------------------------------------
+# 4. 앱 제목과 설명
+# --------------------------------------------------
+st.title("🏘️ 동네별 인구 피라미드")
 st.markdown(
     """
-    <div class="hero">
-      <div class="hero-kicker">🌼 오늘의 작은 성격 탐험</div>
-      <h1>나의 MBTI 단짝 포켓몬은?</h1>
-      <p>나와 찰떡궁합인 포켓몬을 만나 봐요!</p>
-      <p style="font-size:15px;color:#a1885a;margin-top:10px;">16가지 유형 중 내 MBTI를 골라 주세요 ✨</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
+    우리 동네에는 연령대별로 얼마나 많은 사람이 살고 있을까요?
+
+    시도, 시군구, 동을 차례로 선택하면 최신 연도의
+    남녀별 인구 분포를 확인할 수 있습니다.
+    """
 )
 
-if "selected_mbti" not in st.session_state:
-    st.session_state.selected_mbti = None
+st.divider()
 
-st.markdown('<div class="section-label">🧡 내 MBTI 선택하기</div>', unsafe_allow_html=True)
-st.markdown('<div class="section-help">잘 모르겠다면 평소 내 모습과 가장 가까운 유형을 골라 보세요.</div>', unsafe_allow_html=True)
 
-MBTI_ORDER = [
-    "INTJ", "INTP", "ENTJ", "ENTP",
-    "INFJ", "INFP", "ENFJ", "ENFP",
-    "ISTJ", "ISFJ", "ESTJ", "ESFJ",
-    "ISTP", "ISFP", "ESTP", "ESFP",
+# --------------------------------------------------
+# 5. 데이터 불러오기 및 오류 안내
+# --------------------------------------------------
+try:
+    df, latest_year = load_data()
+except Exception as exc:
+    st.error(
+        "데이터를 불러오지 못했습니다. "
+        "인터넷 연결, 원본 ZIP 주소, CSV의 열 이름을 확인해 주세요."
+    )
+    st.exception(exc)
+    st.stop()
+
+st.caption(f"📅 분석 기준 연도: **{latest_year}년**")
+
+
+# --------------------------------------------------
+# 6. 시도 → 시군구 → 동 선택
+# --------------------------------------------------
+st.subheader("📍 지역 선택")
+
+col1, col2, col3 = st.columns(3)
+
+# 시도 목록
+sido_list = sorted(
+    [value for value in df["시도"].unique() if value]
+)
+
+if not sido_list:
+    st.warning("선택할 수 있는 시도 데이터가 없습니다.")
+    st.stop()
+
+with col1:
+    selected_sido = st.selectbox(
+        "① 시도",
+        options=sido_list,
+        key="selected_sido",
+    )
+
+# 선택한 시도에 속하는 시군구만 표시
+sido_df = df.loc[df["시도"] == selected_sido]
+
+sigungu_list = sorted(
+    [value for value in sido_df["시군구"].unique() if value]
+)
+
+if not sigungu_list:
+    st.warning("선택한 시도에 시군구 데이터가 없습니다.")
+    st.stop()
+
+with col2:
+    selected_sigungu = st.selectbox(
+        "② 시군구",
+        options=sigungu_list,
+        key="selected_sigungu",
+    )
+
+# 선택한 시도와 시군구에 속하는 동만 표시
+sigungu_df = sido_df.loc[
+    sido_df["시군구"] == selected_sigungu
 ]
 
-# 4열 버튼 그리드
-for start in range(0, len(MBTI_ORDER), 4):
-    cols = st.columns(4, gap="medium")
-    for col, mbti in zip(cols, MBTI_ORDER[start:start + 4]):
-        with col:
-            label = f"✅ {mbti}" if st.session_state.selected_mbti == mbti else mbti
-            if st.button(label, key=f"mbti_{mbti}", use_container_width=True):
-                st.session_state.selected_mbti = mbti
-                st.balloons()
+dong_list = sorted(
+    [value for value in sigungu_df["동"].unique() if value]
+)
 
-st.markdown('<div class="tip">💡 유형 버튼을 누르면 단짝 포켓몬과 만날 수 있어요. 결과 그림도 눌러 보세요!</div>', unsafe_allow_html=True)
+if not dong_list:
+    st.warning("선택한 시군구에 동 데이터가 없습니다.")
+    st.stop()
 
-
-def make_result_html(mbti: str, pokemon: dict) -> str:
-    """결과 카드를 렌더링하는 HTML/CSS/JS. 외부 프런트엔드 파일은 필요 없습니다."""
-    ko = html.escape(pokemon["ko"])
-    en = html.escape(pokemon["en"])
-    ptype = html.escape(pokemon["type"])
-    feature = html.escape(pokemon["feature"])
-    reason_lines = "<br>".join(html.escape(line) for line in pokemon["reason"].split("\n"))
-    accent = pokemon["accent"]
-    ink = pokemon["ink"]
-    emoji = html.escape(pokemon["emoji"])
-    image_url = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{pokemon['id']}.png"
-    fallback_url = f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{pokemon['id']}.png"
-    # json.dumps로 JS 문자열 이스케이프
-    fallback_js = json.dumps(fallback_url)
-
-    return f'''<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  * {{ box-sizing:border-box; }}
-  html, body {{ margin:0; padding:0; background:transparent; color:#604b2b; font-family:Arial,'Malgun Gothic',sans-serif; }}
-  .result-card {{ position:relative; overflow:hidden; display:flex; align-items:stretch; gap:24px; padding:25px; border-radius:27px; border:2px solid color-mix(in srgb, {accent} 65%, white); background:linear-gradient(135deg,#fffef8 0%,#fff8e6 100%); box-shadow:0 10px 30px rgba(128,92,22,.11); }}
-  .result-card:before {{ content:""; position:absolute; width:210px;height:210px;border-radius:50%; background:{accent}; opacity:.13; top:-93px;left:-80px; }}
-  .art-side {{ position:relative; flex:0 0 42%; min-width:220px; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:7px 0; }}
-  .art-frame {{ position:relative; display:grid; place-items:center; width:min(100%,300px); aspect-ratio:1/1; border-radius:28px; background:radial-gradient(circle at 50% 43%, #fff 0%, color-mix(in srgb, {accent} 19%, #fff8e6) 66%, #fff4d5 100%); border:1px solid color-mix(in srgb, {accent} 38%, white); }}
-  .pokemon-art {{ width:94%; height:94%; object-fit:contain; cursor:pointer; user-select:none; filter:drop-shadow(0 8px 5px rgba(90,70,30,.13)); transition:transform .3s cubic-bezier(.2,.8,.2,1), filter .3s ease; animation:arrival .7s cubic-bezier(.2,.8,.3,1) both, bob 3.1s ease-in-out .8s infinite; transform-origin:50% 72%; position:relative; z-index:2; }}
-  .pokemon-art:hover {{ transform:translateY(-7px) rotate(-5deg) scale(1.08); filter:drop-shadow(0 14px 8px rgba(90,70,30,.22)); }}
-  .pokemon-art:active {{ transform:scale(.92) rotate(4deg); }}
-  .art-hint {{ margin-top:10px; color:#937c53; font-size:13px; text-align:center; }}
-  .info-side {{ position:relative; flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; padding:8px 4px; }}
-  .match-pill {{ align-self:flex-start; border-radius:999px; padding:7px 13px; font-weight:800; font-size:14px; color:{ink}; background:color-mix(in srgb, {accent} 24%, white); margin-bottom:12px; }}
-  h1 {{ color:{ink}; font-size:clamp(28px,3.2vw,39px); line-height:1.12; margin:0 0 4px; letter-spacing:-.6px; }}
-  .english {{ color:{ink}; font-size:18px; font-weight:700; margin-bottom:16px; opacity:.82; }}
-  .mini-heading {{ font-size:14px; font-weight:800; color:#a17c39; letter-spacing:.4px; margin:10px 0 5px; }}
-  .type-chip {{ display:inline-block; border-radius:10px; padding:6px 12px; color:{ink}; border:1px solid color-mix(in srgb, {accent} 55%, white); background:color-mix(in srgb, {accent} 17%, white); font-size:16px; font-weight:800; }}
-  .feature {{ font-size:17px; line-height:1.55; color:#6d5b3b; font-weight:700; }}
-  .reason {{ color:#705f43; font-size:16px; line-height:1.75; background:#fffdf7; border-left:4px solid {accent}; padding:11px 13px; border-radius:0 13px 13px 0; }}
-  .signature {{ margin-top:14px; font-size:15px; font-weight:800; color:{ink}; }}
-  .sparkle {{ position:absolute; z-index:3; pointer-events:none; font-size:22px; animation:sparkle 1s ease-out forwards; }}
-  #confetti {{ position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:20; }}
-  @keyframes arrival {{ 0%{{opacity:0;transform:translateY(24px) scale(.72) rotate(-8deg)}} 65%{{opacity:1;transform:translateY(-6px) scale(1.06) rotate(3deg)}} 100%{{transform:translateY(0) scale(1) rotate(0)}} }}
-  @keyframes bob {{ 0%,100%{{translate:0 0}} 50%{{translate:0 -7px}} }}
-  @keyframes sparkle {{ 0%{{opacity:0;transform:translate(-50%,-50%) scale(.3) rotate(0)}} 25%{{opacity:1}} 100%{{opacity:0;transform:translate(var(--dx),var(--dy)) scale(1.5) rotate(35deg)}} }}
-  @media (max-width:650px) {{ .result-card{{flex-direction:column;gap:12px;padding:18px}} .art-side{{min-width:0}} .art-frame{{width:min(78vw,280px)}} .info-side{{padding:4px 2px}} h1{{font-size:32px}} .reason{{font-size:15px}} }}
-  @media (prefers-reduced-motion: reduce) {{ .pokemon-art{{animation:none;transition:none}} *{{scroll-behavior:auto!important}} }}
-</style>
-</head>
-<body>
-<canvas id="confetti"></canvas>
-<section class="result-card" id="resultCard">
-  <div class="art-side">
-    <div class="art-frame" id="artFrame">
-      <span style="position:absolute;top:13px;left:16px;font-size:24px;opacity:.75">✦</span>
-      <span style="position:absolute;right:17px;bottom:15px;font-size:22px;opacity:.75">✧</span>
-      <img id="pokemonArt" class="pokemon-art" src="{image_url}" alt="{ko} 포켓몬 그림">
-    </div>
-    <div class="art-hint">👆 그림을 톡 눌러 반짝 효과를 확인해 보세요!</div>
-  </div>
-  <div class="info-side">
-    <div class="match-pill">{emoji} {mbti}의 오늘의 단짝</div>
-    <h1>{ko}</h1>
-    <div class="english">{en}</div>
-    <div class="mini-heading">POKÉMON TYPE · 타입</div>
-    <div><span class="type-chip">{ptype}</span></div>
-    <div class="mini-heading">✨ 이런 매력이 있어요</div>
-    <div class="feature">{feature}</div>
-    <div class="mini-heading">💛 왜 잘 어울릴까요?</div>
-    <div class="reason">{reason_lines}</div>
-    <div class="signature">{emoji} 너와 함께라면 매일이 조금 더 특별해!</div>
-  </div>
-</section>
-<script>
-(function() {{
-  const canvas = document.getElementById('confetti');
-  const ctx = canvas.getContext('2d');
-  const colors = ['{accent}', '#FFD166', '#FFE9A8', '#F6A6B7', '#FFFFFF', '#B7DDA5'];
-  let pieces = [];
-  let frameId = null;
-  function resize() {{
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, window.innerWidth * dpr);
-    canvas.height = Math.max(1, window.innerHeight * dpr);
-    canvas.style.width = window.innerWidth + 'px';
-    canvas.style.height = window.innerHeight + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }}
-  function celebrate() {{
-    resize();
-    pieces = Array.from({{length:105}}, () => ({{
-      x: Math.random() * window.innerWidth,
-      y: -20 - Math.random() * window.innerHeight * .65,
-      w: 5 + Math.random() * 7,
-      h: 7 + Math.random() * 9,
-      vx: (Math.random() - .5) * 3.2,
-      vy: 2 + Math.random() * 4.2,
-      spin: Math.random() * 6,
-      vs: (Math.random() - .5) * .2,
-      color: colors[Math.floor(Math.random() * colors.length)],
-      alpha: 1
-    }}));
-    if (frameId) cancelAnimationFrame(frameId);
-    let ticks = 0;
-    function draw() {{
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      pieces.forEach(p => {{
-        p.x += p.vx; p.y += p.vy; p.spin += p.vs;
-        if (ticks > 45) p.alpha = Math.max(0, p.alpha - .012);
-        ctx.save(); ctx.globalAlpha = p.alpha; ctx.translate(p.x, p.y); ctx.rotate(p.spin);
-        ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
-      }});
-      ticks++;
-      if (ticks < 135) frameId = requestAnimationFrame(draw);
-      else {{ ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); frameId = null; }}
-    }}
-    draw();
-  }}
-  const art = document.getElementById('pokemonArt');
-  const frame = document.getElementById('artFrame');
-  const fallbackImage = {fallback_js};
-  art.addEventListener('error', function() {{
-    if (!art.dataset.fallbackTried) {{ art.dataset.fallbackTried = '1'; art.src = fallbackImage; }}
-  }});
-  art.addEventListener('click', function(event) {{
-    const rect = frame.getBoundingClientRect();
-    const x = event.clientX - rect.left; const y = event.clientY - rect.top;
-    for (let i = 0; i < 7; i++) {{
-      const star = document.createElement('span'); star.className = 'sparkle';
-      star.textContent = ['✦','✧','♥','✨','★'][Math.floor(Math.random() * 5)];
-      star.style.left = x + 'px'; star.style.top = y + 'px';
-      star.style.color = colors[Math.floor(Math.random() * colors.length)];
-      star.style.setProperty('--dx', ((Math.random() - .5) * 125) + 'px');
-      star.style.setProperty('--dy', (-30 - Math.random() * 100) + 'px');
-      frame.appendChild(star); setTimeout(() => star.remove(), 1050);
-    }}
-    art.animate([{{transform:'scale(1) rotate(0deg)'}},{{transform:'scale(1.12) rotate(-8deg)'}},{{transform:'scale(.96) rotate(5deg)'}},{{transform:'scale(1) rotate(0deg)'}}], {{duration:520,easing:'cubic-bezier(.2,.8,.3,1)'}});
-    celebrate();
-  }});
-  window.addEventListener('resize', resize);
-  // 결과가 나타날 때도 작은 축하 효과를 한 번 보여 줍니다.
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) celebrate();
-}})();
-</script>
-</body>
-</html>'''
-
-
-if st.session_state.selected_mbti:
-    selected = st.session_state.selected_mbti
-    pokemon = POKEMON[selected]
-    st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div class='section-label'>🎉 짝꿍 찾기 성공! <span style='color:{pokemon['ink']}'>{selected}</span>의 단짝을 소개할게요</div>",
-        unsafe_allow_html=True,
+with col3:
+    selected_dong = st.selectbox(
+        "③ 동",
+        options=dong_list,
+        key="selected_dong",
     )
-    components.html(make_result_html(selected, pokemon), height=560, scrolling=False)
-    st.markdown(
-        "<div class='footer-note'>포켓몬 이미지는 <a href='https://github.com/PokeAPI/sprites' target='_blank' rel='noreferrer'>PokeAPI Sprites</a> 저장소에서 불러옵니다.\nMBTI와 포켓몬의 조합은 재미를 위한 창작 콘텐츠예요. 🌼</div>",
-        unsafe_allow_html=True,
+
+
+# --------------------------------------------------
+# 7. 선택한 동네의 인구 데이터 추출
+# --------------------------------------------------
+selected_df = df.loc[
+    (df["시도"] == selected_sido)
+    & (df["시군구"] == selected_sigungu)
+    & (df["동"] == selected_dong)
+]
+
+if selected_df.empty:
+    st.warning("선택한 지역의 인구 데이터가 없습니다.")
+    st.stop()
+
+# 같은 지역에 여러 행이 있을 경우 나이별 인구를 합산합니다.
+# 단, 원본 데이터에 중복 집계가 있는지 별도로 확인하는 것이 좋습니다.
+age_data = {}
+
+for age in AGE_LABELS:
+    male_col = f"남_{age}"
+    female_col = f"여_{age}"
+
+    age_data[age] = {
+        "남자": selected_df[male_col].sum(),
+        "여자": selected_df[female_col].sum(),
+    }
+
+age_df = pd.DataFrame.from_dict(age_data, orient="index")
+age_df.index.name = "나이"
+
+# 그래프의 가로축에 사용할 남녀 인구
+# 남자는 음수로 바꿔 왼쪽에 표시합니다.
+age_df["남자_그래프"] = -age_df["남자"]
+age_df["여자_그래프"] = age_df["여자"]
+
+
+# --------------------------------------------------
+# 8. 주요 인구 지표
+# --------------------------------------------------
+total_male = int(age_df["남자"].sum())
+total_female = int(age_df["여자"].sum())
+total_population = total_male + total_female
+
+metric1, metric2, metric3 = st.columns(3)
+
+metric1.metric("전체 인구", f"{total_population:,}명")
+metric2.metric("남자 인구", f"{total_male:,}명")
+metric3.metric("여자 인구", f"{total_female:,}명")
+
+st.markdown(
+    f"### {selected_sido} {selected_sigungu} {selected_dong}"
+    f" 인구 피라미드"
+)
+
+
+# --------------------------------------------------
+# 9. 인구 피라미드 그리기
+# --------------------------------------------------
+fig = go.Figure()
+
+# 남자: 음수 값이므로 중앙의 0을 기준으로 왼쪽에 표시
+fig.add_trace(
+    go.Bar(
+        name="남자",
+        y=AGE_LABELS,
+        x=age_df.loc[AGE_LABELS, "남자_그래프"],
+        orientation="h",
+        marker_color="#C96F50",
+        customdata=age_df.loc[AGE_LABELS, "남자"],
+        hovertemplate=(
+            "나이: %{y}<br>"
+            "남자 인구: %{customdata:,.0f}명"
+            "<extra></extra>"
+        ),
     )
-else:
-    st.markdown(
-        """
-        <div style="text-align:center;margin:28px auto 4px;max-width:600px;padding:20px;border-radius:22px;background:rgba(255,255,255,.6);border:1px dashed #e9cc7c;">
-          <div style="font-size:40px;">🥚✨</div>
-          <div style="font-size:22px;font-weight:800;color:#765a27;margin:8px 0;">어떤 포켓몬이 기다리고 있을까요?</div>
-          <div style="font-size:16px;color:#9a8050;">위에서 MBTI를 선택하면 단짝의 모습이 나타나요.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+)
+
+# 여자: 양수 값이므로 중앙의 0을 기준으로 오른쪽에 표시
+fig.add_trace(
+    go.Bar(
+        name="여자",
+        y=AGE_LABELS,
+        x=age_df.loc[AGE_LABELS, "여자_그래프"],
+        orientation="h",
+        marker_color="#E9AD8B",
+        hovertemplate=(
+            "나이: %{y}<br>"
+            "여자 인구: %{x:,.0f}명"
+            "<extra></extra>"
+        ),
     )
+)
+
+# 가로축 눈금은 남자 쪽도 양수 인구처럼 보이게 표시합니다.
+max_population = max(
+    float(age_df["남자"].max()),
+    float(age_df["여자"].max()),
+    1.0,
+)
+
+# 좌우 축 범위를 대칭으로 설정하여 비교하기 쉽게 만듭니다.
+axis_limit = max_population * 1.12
+
+tick_step = max(1, int(axis_limit / 5))
+tick_limit = ((int(axis_limit) + tick_step - 1) // tick_step) * tick_step
+
+tick_values_positive = list(range(0, tick_limit + 1, tick_step))
+tick_values = [-value for value in tick_values_positive[:0:-1]]
+tick_values += tick_values_positive
+
+tick_text = [f"{abs(value):,}" for value in tick_values]
+
+fig.update_layout(
+    template="plotly_white",
+    barmode="overlay",
+    height=1050,
+    margin=dict(l=80, r=40, t=40, b=70),
+    plot_bgcolor="#FFFCF8",
+    paper_bgcolor="#FFFCF8",
+    font=dict(
+        family="Arial, sans-serif",
+        size=12,
+        color="#5E473B",
+    ),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.01,
+        xanchor="center",
+        x=0.5,
+        title_text="성별",
+    ),
+    xaxis=dict(
+        title="인구 (명)",
+        range=[-axis_limit, axis_limit],
+        tickmode="array",
+        tickvals=tick_values,
+        ticktext=tick_text,
+        zeroline=True,
+        zerolinecolor="#8C7668",
+        zerolinewidth=2,
+        showgrid=True,
+        gridcolor="#F0E5DC",
+    ),
+    yaxis=dict(
+        title="나이",
+        type="category",
+
+        # 핵심: 나이 라벨을 0세부터 100세 이상까지 직접 고정합니다.
+        # categoryorder='array'와 categoryarray를 함께 지정합니다.
+        # Plotly의 범주축은 배열의 마지막 항목이 위쪽에 오므로
+        # 아래 0세, 위 100세 이상 순서를 명확히 지정합니다.
+        categoryorder="array",
+        categoryarray=AGE_LABELS,
+
+        # 축 전체를 뒤집는 autorange='reversed'는 사용하지 않습니다.
+        showgrid=True,
+        gridcolor="#F0E5DC",
+        tickfont=dict(size=10),
+    ),
+    bargap=0.12,
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# --------------------------------------------------
+# 10. 나이 축 순서 확인
+# --------------------------------------------------
+# AGE_LABELS가 0세부터 100세 이상까지 순서대로 생성되었고,
+# y축 categoryarray에도 같은 목록을 넣었으므로
+# 아래쪽은 0세, 위쪽은 100세 이상이 됩니다.
+st.caption(
+    "축 순서 확인: 맨 아래 0세 → 맨 위 100세 이상. "
+    "남자는 왼쪽, 여자는 오른쪽입니다."
+)
+
+
+# --------------------------------------------------
+# 11. 나이별 인구 표
+# --------------------------------------------------
+with st.expander("📋 나이별 남녀 인구 표 보기"):
+    display_df = age_df[["남자", "여자"]].copy()
+    display_df["합계"] = display_df["남자"] + display_df["여자"]
+
+    # 화면에 표시할 숫자를 천 단위 쉼표 형식으로 정리합니다.
+    display_df = display_df.astype(int).map(
+        lambda value: f"{value:,}"
+    )
+    display_df.index.name = "나이"
+
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+    )
+
+    # 표 데이터를 CSV 파일로 내려받을 수 있습니다.
+    download_df = age_df[["남자", "여자"]].copy()
+    download_df["합계"] = (
+        download_df["남자"] + download_df["여자"]
+    )
+    download_df.index.name = "나이"
+
+    csv_data = download_df.to_csv(
+        index=True,
+        encoding="utf-8-sig",
+    )
+
+    st.download_button(
+        label="📥 나이별 인구 CSV 다운로드",
+        data=csv_data,
+        file_name=(
+            f"인구피라미드_{latest_year}_"
+            f"{selected_sido}_{selected_sigungu}_{selected_dong}.csv"
+        ),
+        mime="text/csv",
+    )
+
+st.divider()
+
+st.caption(
+    "데이터 출처: "
+    "first2022-cyber/contents GitHub 저장소의 "
+    "population_ts_yearly_gender.zip"
+)
